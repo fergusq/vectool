@@ -9,13 +9,13 @@ use rulinalg::norm::Euclidean;
 
 struct Model(HashMap<String, Vector<f64>>);
 
-fn load_model(filename: String) -> Model {
+fn load_model(filename: &String) -> Model {
     let mut vec_size = 100;
     let mut model = HashMap::new();
     let reader = BufReader::new(File::open(filename).expect("file could not be opened"));
     for (i, maybe_line) in reader.lines().enumerate() {
         if let Ok(line) = maybe_line {
-            let fields: Vec<&str> = line.trim().split(|c| c == ' ' || c == ',').collect();
+            let fields: Vec<&str> = line.trim().split(' ').collect();
             if fields.len() == 2 {
                 vec_size = fields[1].parse().expect("invalid vector size");
             } else if fields.len() == vec_size + 1 {
@@ -78,93 +78,97 @@ fn find_nnk(model: &Model, vector: &Vector<f64>, k: usize) -> Vec<(f64, String)>
     ans
 }
 
-fn main() {
+fn filter(filename: &String) {
     let special_character_regex = Regex::new("[^a-zåäö ]").unwrap();
+    let model = load_model(filename);
+    eprintln!("Loaded {} word model", model.0.len());
+    let stdin = std::io::stdin();
+    for line in stdin.lock().lines() {
+        println!("{}",
+            special_character_regex.replace_all(
+                line.unwrap()
+                    .to_lowercase()
+                    .as_str(),
+                ""
+            )
+            .split(' ')
+            .map(String::from)
+            .map(|word| find_nn(&model, word))
+            .collect::<Vec<String>>()
+            .join(" "));
+    }
+}
+
+fn nn(filename: &String) {
+    let model = load_model(filename);
+    eprintln!("Loaded {} word model", model.0.len());
+    let stdin = std::io::stdin();
+    'outer: for line in stdin.lock().lines() {
+        let preprocessed_line = line.unwrap()
+            .trim()
+            .to_lowercase();
+        
+        let words = preprocessed_line
+            .split(' ')
+            .collect::<Vec<&str>>();
+        
+        if words.len() % 2 != 1 {
+            eprintln!("wrong number of operands");
+        }
+
+        let first_word = words[0].to_string();
+        if !model.0.contains_key(&first_word) {
+            eprintln!("unknown word `{}'", first_word);
+            continue;
+        }
+
+        let mut vector = model.0[&first_word].clone();
+        for i in (1..words.len()).step_by(2) {
+            let word = words[i+1].to_string();
+            if !model.0.contains_key(&word) {
+                eprintln!("unknown word `{}'", word);
+                continue 'outer;
+            }
+
+            let vector2 = &model.0[&word];
+            match words[i] {
+                "+" => {
+                    vector = vector + vector2;
+                }
+                "-" => {
+                    vector = vector - vector2;
+                }
+                _ => {
+                    eprintln!("unknown operator `{}'", words[i]);
+                }
+            }
+        }
+        for (distance, near_word) in find_nnk(&model, &vector, 10) {
+            if words.contains(&near_word.as_str()) {
+                println!("({} {:.4})", near_word, distance);
+            } else {
+                println!("{} {:.4}", near_word, distance);
+            }
+        }
+    }
+}
+
+fn main() {
     let args: Vec<String> = env::args().collect();
     match args.len() {
         3 => {
             match args[1].as_str() {
-                "filter" => {
-                    let file = args[2].clone();
-                    let model = load_model(file);
-                    eprintln!("Loaded {} word model", model.0.len());
-                    let stdin = std::io::stdin();
-                    for line in stdin.lock().lines() {
-                        println!("{}",
-                            special_character_regex.replace_all(
-                                line.unwrap()
-                                    .to_lowercase()
-                                    .as_str(),
-                                ""
-                            )
-                            .split(' ')
-                            .map(String::from)
-                            .map(|word| find_nn(&model, word))
-                            .collect::<Vec<String>>()
-                            .join(" "));
-                    }
-                }
-                "nn" => {
-                    let file = args[2].clone();
-                    let model = load_model(file);
-                    eprintln!("Loaded {} word model", model.0.len());
-                    let stdin = std::io::stdin();
-                    'outer: for line in stdin.lock().lines() {
-                        let preprocessed_line = line.unwrap()
-                            .trim()
-                            .to_lowercase();
-                        
-                        let words = preprocessed_line
-                            .split(' ')
-                            .collect::<Vec<&str>>();
-                        
-                        if words.len() % 2 != 1 {
-                            eprintln!("wrong number of operands");
-                        }
-
-                        let first_word = words[0].to_string();
-                        if !model.0.contains_key(&first_word) {
-                            eprintln!("unknown word `{}'", first_word);
-                            continue;
-                        }
-
-                        let mut vector = model.0[&first_word].clone();
-                        for i in (1..words.len()).step_by(2) {
-                            let word = words[i+1].to_string();
-                            if !model.0.contains_key(&word) {
-                                eprintln!("unknown word `{}'", word);
-                                continue 'outer;
-                            }
-
-                            let vector2 = &model.0[&word];
-                            match words[i] {
-                                "+" => {
-                                    vector = vector + vector2;
-                                }
-                                "-" => {
-                                    vector = vector - vector2;
-                                }
-                                _ => {
-                                    eprintln!("unknown operator `{}'", words[i]);
-                                }
-                            }
-                        }
-                        for (distance, near_word) in find_nnk(&model, &vector, 10) {
-                            if words.contains(&near_word.as_str()) {
-                                println!("({} {:.4})", near_word, distance);
-                            } else {
-                                println!("{} {:.4}", near_word, distance);
-                            }
-                        }
-                    }
-                }
+                "filter" => filter(&args[2]),
+                "nn" => nn(&args[2]),
                 _ => {
                     eprintln!("unknown command: {}", args[1]);
+                    std::process::exit(1);
                 }
             }
         }
         _ => {
             eprintln!("usage: vectool (filter|nn) <model>");
+            std::process::exit(1);
         }
     }
 }
