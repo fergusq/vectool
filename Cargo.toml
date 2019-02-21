@@ -1,0 +1,9 @@
+[package]
+name = "vectool"
+version = "0.1.0"
+authors = ["Iikka Hauhio <iikka@kaivos.org>"]
+edition = "2018"
+
+[dependencies]
+rulinalg = "*"
+regex = "*"
