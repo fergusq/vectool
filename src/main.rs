@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 use regex::Regex;
 use rulinalg::vector::Vector;
 use rulinalg::norm::Euclidean;
-use clap::{App, Arg, SubCommand};
+use clap::{App, AppSettings, Arg, SubCommand};
 
 use model::Model;
 use lexer::Token;
@@ -156,6 +156,7 @@ fn main() {
 			.about("Replace words in the input stream with their nearest neighbours"))
 		.subcommand(SubCommand::with_name("nn")
 			.about("Find nearest neighbours of linear combinations of word vectors"))
+		.setting(AppSettings::SubcommandRequired)
 		.get_matches();
 	
 	let model_file = matches.value_of("model").unwrap();
