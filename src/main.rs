@@ -1,6 +1,9 @@
+mod lexer;
+mod model;
+
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::collections::{HashMap, binary_heap::BinaryHeap};
+use std::collections::binary_heap::BinaryHeap;
 use std::cmp::Ordering;
 #[macro_use] extern crate lazy_static;
 use regex::Regex;
@@ -8,28 +11,8 @@ use rulinalg::vector::Vector;
 use rulinalg::norm::Euclidean;
 use clap::{App, Arg, SubCommand};
 
-struct Model(HashMap<String, Vector<f64>>);
-
-fn load_model(filename: &str) -> Model {
-    let mut vec_size = 100;
-    let mut model = HashMap::new();
-    let reader = BufReader::new(File::open(filename).expect("model file could not be opened"));
-    for (i, maybe_line) in reader.lines().enumerate() {
-        if let Ok(line) = maybe_line {
-            let fields: Vec<&str> = line.trim().split(' ').collect();
-            if fields.len() == 2 {
-                vec_size = fields[1].parse().expect("invalid vector size");
-            } else if fields.len() == vec_size + 1 {
-                let word = fields[0].to_string();
-                let vector = Vector::from_fn(vec_size, |i| fields[i+1].parse().unwrap());
-                model.insert(word, vector);
-            } else {
-                eprintln!("could not parse line {} with {} fields", i, fields.len());
-            }
-        }
-    }
-    Model(model)
-}
+use model::Model;
+use lexer::Token;
 
 fn load_excluded_file(filename: &str) -> impl Iterator<Item = String> {
     let reader = BufReader::new(File::open(filename).expect("exclude file could not be opened"));
@@ -94,13 +77,13 @@ fn find_nnk(model: &Model, vector: &Vector<f64>, k: usize) -> Vec<(f64, String)>
 fn filter(model: &Model) {
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
-        println!("{}",
-            preprocess_text(line.unwrap())
-            .split(' ')
-            .map(String::from)
-            .map(|word| find_nn(model, word))
-            .collect::<Vec<String>>()
-            .join(" "));
+        for token in lexer::lex(line.unwrap()) {
+            match token {
+                Token::Other(s) => print!("{}", s),
+                Token::Word(w, c) => print!("{}", lexer::capitalize(find_nn(model, w), c))
+            }
+        }
+        println!();
     }
 }
 
@@ -176,7 +159,7 @@ fn main() {
         .get_matches();
     
     let model_file = matches.value_of("model").unwrap();
-    let mut model = load_model(model_file);
+    let mut model = model::load_model(model_file);
     eprintln!("Loaded {} word model", model.0.len());
 
     if let Some(exclude_file) = matches.value_of("exclude_file") {
