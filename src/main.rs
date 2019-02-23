@@ -1,18 +1,19 @@
-use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::collections::{HashMap, binary_heap::BinaryHeap};
 use std::cmp::Ordering;
+#[macro_use] extern crate lazy_static;
 use regex::Regex;
 use rulinalg::vector::Vector;
 use rulinalg::norm::Euclidean;
+use clap::{App, Arg, SubCommand};
 
 struct Model(HashMap<String, Vector<f64>>);
 
-fn load_model(filename: &String) -> Model {
+fn load_model(filename: &str) -> Model {
     let mut vec_size = 100;
     let mut model = HashMap::new();
-    let reader = BufReader::new(File::open(filename).expect("file could not be opened"));
+    let reader = BufReader::new(File::open(filename).expect("model file could not be opened"));
     for (i, maybe_line) in reader.lines().enumerate() {
         if let Ok(line) = maybe_line {
             let fields: Vec<&str> = line.trim().split(' ').collect();
@@ -28,6 +29,18 @@ fn load_model(filename: &String) -> Model {
         }
     }
     Model(model)
+}
+
+fn load_excluded_file(filename: &str) -> impl Iterator<Item = String> {
+    let reader = BufReader::new(File::open(filename).expect("exclude file could not be opened"));
+    reader.lines().flatten().map(preprocess_text)
+}
+
+fn preprocess_text(text: String) -> String {
+    lazy_static!{
+        static ref special_character_regex: Regex = Regex::new("[^a-zåäö ]").unwrap();
+    }
+    special_character_regex.replace_all(text.to_lowercase().as_str(), "").to_string()
 }
 
 fn find_nn(model: &Model, word: String) -> String {
@@ -78,30 +91,20 @@ fn find_nnk(model: &Model, vector: &Vector<f64>, k: usize) -> Vec<(f64, String)>
     ans
 }
 
-fn filter(filename: &String) {
-    let special_character_regex = Regex::new("[^a-zåäö ]").unwrap();
-    let model = load_model(filename);
-    eprintln!("Loaded {} word model", model.0.len());
+fn filter(model: &Model) {
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
         println!("{}",
-            special_character_regex.replace_all(
-                line.unwrap()
-                    .to_lowercase()
-                    .as_str(),
-                ""
-            )
+            preprocess_text(line.unwrap())
             .split(' ')
             .map(String::from)
-            .map(|word| find_nn(&model, word))
+            .map(|word| find_nn(model, word))
             .collect::<Vec<String>>()
             .join(" "));
     }
 }
 
-fn nn(filename: &String) {
-    let model = load_model(filename);
-    eprintln!("Loaded {} word model", model.0.len());
+fn nn(model: &Model) {
     let stdin = std::io::stdin();
     'outer: for line in stdin.lock().lines() {
         let preprocessed_line = line.unwrap()
@@ -143,7 +146,7 @@ fn nn(filename: &String) {
                 }
             }
         }
-        for (distance, near_word) in find_nnk(&model, &vector, 10) {
+        for (distance, near_word) in find_nnk(model, &vector, 10) {
             if words.contains(&near_word.as_str()) {
                 println!("({} {:.4})", near_word, distance);
             } else {
@@ -154,21 +157,38 @@ fn nn(filename: &String) {
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    match args.len() {
-        3 => {
-            match args[1].as_str() {
-                "filter" => filter(&args[2]),
-                "nn" => nn(&args[2]),
-                _ => {
-                    eprintln!("unknown command: {}", args[1]);
-                    std::process::exit(1);
-                }
-            }
+    let matches = App::new("Vectool")
+        .version("0.1.0")
+        .author("Iikka Hauhio <iikka.hauhio@helsinki.fi>")
+        .about("Make queries to word vector models")
+        .arg(Arg::with_name("model")
+            .help("The word vector model file")
+            .required(true))
+        .arg(Arg::with_name("exclude_file")
+            .help("Set the file of excluded words")
+            .short("-e")
+            .long("exclude-file")
+            .takes_value(true))
+        .subcommand(SubCommand::with_name("filter")
+            .about("Replace words in the input stream with their nearest neighbours"))
+        .subcommand(SubCommand::with_name("nn")
+            .about("Find nearest neighbours of linear combinations of word vectors"))
+        .get_matches();
+    
+    let model_file = matches.value_of("model").unwrap();
+    let mut model = load_model(model_file);
+    eprintln!("Loaded {} word model", model.0.len());
+
+    if let Some(exclude_file) = matches.value_of("exclude_file") {
+        let excluded = load_excluded_file(exclude_file);
+        for word in excluded {
+            model.0.remove(&word);
         }
-        _ => {
-            eprintln!("usage: vectool (filter|nn) <model>");
-            std::process::exit(1);
-        }
+    }
+
+    if let Some(_subcommand_matches) = matches.subcommand_matches("filter") {
+        filter(&model);
+    } else if let Some(_subcommand_matches) = matches.subcommand_matches("nn") {
+        nn(&model);
     }
 }
