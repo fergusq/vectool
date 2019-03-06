@@ -19,12 +19,12 @@ Usage
 Calculator mode
 ---------------
 
-The calculator (nn) mode is used to find nearest neighbours of word vectors and their linear combinations.
+The calculator (calc) mode is used to find nearest neighbours of word vectors and their linear combinations.
 
 In this example I use a `pre-trained fastText model <https://fasttext.cc/docs/en/english-vectors.html>`_.
 The model is loaded using the following command::
 
-	$ vectool crawl-300d-2M.vec nn
+	$ vectool crawl-300d-2M.vec calc
 	Loaded 1999995 word model
 
 Now we can, for example, find the nearest neighbours of the word 'king' (the first line is the input):
@@ -58,6 +58,8 @@ It is also possible make analogy queries by subtracting and adding words:
 	king. 0.5914
 	princess 0.5856
 	queens 0.5800
+
+The ``<>`` operator can be used to compare two vectors using both cosine and euclidean distance.
 
 Filter mode
 -----------
