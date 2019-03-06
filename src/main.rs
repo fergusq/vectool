@@ -1,3 +1,4 @@
+mod calc;
 mod lexer;
 mod model;
 
@@ -10,7 +11,9 @@ use regex::Regex;
 use rulinalg::vector::Vector;
 use rulinalg::norm::Euclidean;
 use clap::{App, AppSettings, Arg, SubCommand};
+#[macro_use] extern crate nom;
 
+use calc::Expression;
 use model::Model;
 use lexer::Token;
 
@@ -87,61 +90,51 @@ fn filter(model: &Model) {
 	}
 }
 
-fn nn(model: &Model) {
+fn calc(model: &Model) {
 	let stdin = std::io::stdin();
 	'outer: for line in stdin.lock().lines() {
-		let preprocessed_line = line.unwrap()
+		let mut preprocessed_line = line.unwrap()
 			.trim()
 			.to_lowercase();
+		preprocessed_line.push('.');
 		
-		let words = preprocessed_line
-			.split(' ')
-			.collect::<Vec<&str>>();
-		
-		if words.len() % 2 != 1 {
-			eprintln!("wrong number of operands");
-		}
-
-		let first_word = words[0].to_string();
-		if !model.0.contains_key(&first_word) {
-			eprintln!("unknown word `{}'", first_word);
-			continue;
-		}
-
-		let mut vector = model.0[&first_word].clone();
-		for i in (1..words.len()).step_by(2) {
-			let word = words[i+1].to_string();
-			if !model.0.contains_key(&word) {
-				eprintln!("unknown word `{}'", word);
-				continue 'outer;
-			}
-
-			let vector2 = &model.0[&word];
-			match words[i] {
-				"+" => {
-					vector = vector + vector2;
+		let expr = calc::expr(preprocessed_line.as_str());
+		match expr {
+			Ok((".", x)) => {
+				let words = x.words();
+				for word in &words {
+					if !model.0.contains_key(word) {
+						eprintln!("unknown word `{}'", word);
+						continue 'outer;
+					}
 				}
-				"-" => {
-					vector = vector - vector2;
-				}
-				_ => {
-					eprintln!("unknown operator `{}'", words[i]);
+				match x {
+					Expression::NN(e) => {
+						let vector = calc::eval(e, model).unwrap();
+						for (distance, near_word) in find_nnk(model, &vector, 10) {
+							if words.contains(&near_word) {
+								println!("({} {:.4})", near_word, distance);
+							} else {
+								println!("{} {:.4}", near_word, distance);
+							}
+						}
+					},
+					Expression::Distance(a, b) => {
+						let x = calc::eval(a, model).unwrap();
+						let y = calc::eval(b, model).unwrap();
+						println!("Cosine distance: {}", x.dot(&y) / x.norm(Euclidean) / y.norm(Euclidean));
+						println!("Euclidean distance: {}", (x - y).norm(Euclidean));
+					}
 				}
 			}
-		}
-		for (distance, near_word) in find_nnk(model, &vector, 10) {
-			if words.contains(&near_word.as_str()) {
-				println!("({} {:.4})", near_word, distance);
-			} else {
-				println!("{} {:.4}", near_word, distance);
-			}
+			_ => eprintln!("syntax error"),
 		}
 	}
 }
 
 fn main() {
 	let matches = App::new("Vectool")
-		.version("0.1.0")
+		.version("0.2.0")
 		.author("Iikka Hauhio <iikka.hauhio@helsinki.fi>")
 		.about("Make queries to word vector models")
 		.arg(Arg::with_name("model")
@@ -154,8 +147,8 @@ fn main() {
 			.takes_value(true))
 		.subcommand(SubCommand::with_name("filter")
 			.about("Replace words in the input stream with their nearest neighbours"))
-		.subcommand(SubCommand::with_name("nn")
-			.about("Find nearest neighbours of linear combinations of word vectors"))
+		.subcommand(SubCommand::with_name("calc")
+			.about("Find nearest neighbours of linear combinations of word vectors and compare vectors"))
 		.setting(AppSettings::SubcommandRequired)
 		.get_matches();
 	
@@ -172,7 +165,7 @@ fn main() {
 
 	if let Some(_subcommand_matches) = matches.subcommand_matches("filter") {
 		filter(&model);
-	} else if let Some(_subcommand_matches) = matches.subcommand_matches("nn") {
-		nn(&model);
+	} else if let Some(_subcommand_matches) = matches.subcommand_matches("calc") {
+		calc(&model);
 	}
 }
