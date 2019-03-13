@@ -4,7 +4,7 @@ mod model;
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::collections::binary_heap::BinaryHeap;
+use std::collections::{binary_heap::BinaryHeap, HashMap};
 use std::cmp::Ordering;
 #[macro_use] extern crate lazy_static;
 use regex::Regex;
@@ -19,10 +19,10 @@ use lexer::Token;
 
 fn load_excluded_file(filename: &str) -> impl Iterator<Item = String> {
 	let reader = BufReader::new(File::open(filename).expect("exclude file could not be opened"));
-	reader.lines().flatten().map(preprocess_text)
+	reader.lines().flatten().map(|s| preprocess_text(&s))
 }
 
-fn preprocess_text(text: String) -> String {
+fn preprocess_text(text: &str) -> String {
 	lazy_static!{
 		static ref special_character_regex: Regex = Regex::new("[^a-zåäö ]").unwrap();
 	}
@@ -132,26 +132,72 @@ fn calc(model: &Model) {
 	}
 }
 
+fn sa(model: &Model, subs: HashMap<String, String>) {
+	let stdin = std::io::stdin();
+	for line in stdin.lock().lines() {
+		let line = preprocess_text(line.unwrap().trim());
+		let words = line.split(|c: char| c.is_whitespace());
+		let mut result = Vec::new();
+		'middle: for word in words {
+			if subs.contains_key(word) {
+				result.push(subs[word].clone());
+				continue;
+			}
+			else if model.0.contains_key(word) {
+				let vw = &model.0[word];
+				for (a, b) in &subs {
+					if model.0.contains_key(a) && model.0.contains_key(b) {
+						let va = &model.0[a];
+						let vb = &model.0[b];
+						let analogy = vw - va + vb;
+						for (distance, near_word) in find_nnk(model, &analogy, 4) {
+							if near_word != word && near_word != *a && near_word != *b && distance >= 0.6 {
+								result.push(near_word);
+								continue 'middle;
+							}
+						}
+					}
+				}
+			}
+			result.push(word.to_string());
+		}
+		println!("{}", result.join(" "));
+	}
+}
+
 fn main() {
 	let matches = App::new("Vectool")
-		.version("0.2.0")
+		.version("0.3.0")
 		.author("Iikka Hauhio <iikka.hauhio@helsinki.fi>")
 		.about("Make queries to word vector models")
 		.arg(Arg::with_name("model")
 			.help("The word vector model file")
-			.required(true))
+			.required(true)
+		)
 		.arg(Arg::with_name("exclude_file")
 			.help("Set the file of excluded words")
 			.short("-e")
 			.long("exclude-file")
-			.takes_value(true))
+			.takes_value(true)
+		)
 		.subcommand(SubCommand::with_name("filter")
-			.about("Replace words in the input stream with their nearest neighbours"))
+			.about("Replace words in the input stream with their nearest neighbours")
+		)
 		.subcommand(SubCommand::with_name("calc")
-			.about("Find nearest neighbours of linear combinations of word vectors and compare vectors"))
+			.about("Find nearest neighbours of linear combinations of word vectors and compare vectors")
+		)
+		.subcommand(SubCommand::with_name("sa")
+			.about("Create sentence analogies")
+			.arg(Arg::with_name("substitutions")
+				.help("Substitution list")
+				.multiple(true)
+				.value_name("FROM=TO")
+				.validator(|s| if s.contains('=') {Ok(())} else {Err("Substitutions must have form FROM=TO".to_string())})
+			)
+		)
 		.setting(AppSettings::SubcommandRequired)
 		.get_matches();
-	
+
 	let model_file = matches.value_of("model").unwrap();
 	let mut model = model::load_model(model_file);
 	eprintln!("Loaded {} word model", model.0.len());
@@ -167,5 +213,11 @@ fn main() {
 		filter(&model);
 	} else if let Some(_subcommand_matches) = matches.subcommand_matches("calc") {
 		calc(&model);
+	} else if let Some(subcommand_matches) = matches.subcommand_matches("sa") {
+		let subs = subcommand_matches.values_of("substitutions").unwrap()
+			.map(|v| v.split('=').map(String::from).collect::<Vec<_>>())
+			.map(|a| (a[0].clone(), a[1].clone()))
+			.collect::<HashMap<_, _>>();
+		sa(&model, subs);
 	}
 }
