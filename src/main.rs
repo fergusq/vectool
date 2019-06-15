@@ -94,8 +94,7 @@ fn calc(model: &Model) {
 	let stdin = std::io::stdin();
 	'outer: for line in stdin.lock().lines() {
 		let mut preprocessed_line = line.unwrap()
-			.trim()
-			.to_lowercase();
+			.trim().to_string();
 		preprocessed_line.push('.');
 		
 		let expr = calc::expr(preprocessed_line.as_str());

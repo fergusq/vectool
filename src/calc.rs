@@ -45,7 +45,9 @@ impl Expression {
 
 fn is_word_letter(c: char) -> bool {
 	match c {
-		'a'...'z' | 'ä' | 'ö' | 'å' => true,
+		'a'...'z' | 'ä' | 'ö' | 'å' |
+		'A'...'Z' | 'Ä' | 'Ö' | 'Å' |
+		'-' | '_' => true,
 		_ => false
 	}
 }
