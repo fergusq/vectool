@@ -67,12 +67,13 @@ Filter mode
 The filter mode is used to replace words in the input stream with their nearest neighbours.
 One use case is to transform sentences to similar sentences.
 This seems to work better for Finnish than for English.
-The example uses `Yle's Finnish word2vec model <http://developer.yle.fi/data.html>`_
-(convert from csv to tsv and remove the first line before using).
+The example uses `Yle's Finnish word2vec model <http://developer.yle.fi/>`_
+(replace commas with spaces).
 
 .. parsed-literal::
 
-	**$ vectool word2vec_fin.tsv -e stopwords-fi.txt filter**
+	**$ sed 's/,/ /g' word2vec_fin.csv > word2vec_fin.vec**
+	**$ vectool word2vec_fin.vec -e stopwords-fi.txt filter**
 	Loaded 880327 word model
 	*Kyselyt: Trumpin suosio alamaissa, demokraattiehdokkaat vahvoilla*
 	Testitulokset: Obaman arvostus laskusuunnassa, demokraattiehdokkaat etulyöntiasemassa
